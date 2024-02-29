@@ -1,22 +1,17 @@
 import sys
-from typing import Optional
 from math import dist
 import numpy as np
 import cv2
 import socket
-import pickle
 from Score import Score
 from PySide6.QtCore import QThread, Signal, Slot
-from PySide6.QtWidgets import QApplication, QMainWindow, QColorDialog
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtMultimedia import QMediaDevices
 from ui.compiled.uiASSD_DASHBOARD import Ui_MainWindow
 import threading
 import Color
-from MultiThreadedHttpServer import RequestHandler, Server
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-import requests, json, base64, time
-from entity import Entity
+import json
 from _thread import *
 
 class ThreadClass(QThread):
@@ -74,43 +69,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.camSource.setScaledContents(True)
 
         if self.getMaskCheckBox.isChecked():
-            # mask_lower_hsv = np.array([self.MaskMinHSlider.value(), self.MaskMinSSlider.value(), self.MaskMinVSlider.value()], dtype=np.uint8)
-            # mask_upper_hsv = np.array([self.MaskMaxHSlider.value(), self.MaskMaxSSlider.value(), self.MaskMaxVSlider.value()], dtype=np.uint8)
-
+            
             hsv_original = cv2.cvtColor(src=self.copyImage,code=cv2.COLOR_BGR2HSV)
 
             #hardcoded values for masking red color
 
             mask1_lower_hsv, mask1_upper_hsv, mask2_lower_hsv, mask2_upper_hsv = Color.color(self.colorComboBox.currentText())
 
-            # mask1_lower_hsv = np.array([0,50,50], dtype=np.uint8)
-            # mask1_upper_hsv = np.array([10,255,255], dtype=np.uint8)
             mask1 = cv2.inRange(src=hsv_original, lowerb=mask1_lower_hsv, upperb=mask1_upper_hsv)
 
-            # mask2_lower_hsv = np.array([170,50,50], dtype=np.uint8)
-            # mask2_upper_hsv = np.array([180,255,255], dtype=np.uint8)
             mask2 = cv2.inRange(src=hsv_original, lowerb=mask2_lower_hsv, upperb=mask2_upper_hsv)
 
             mask_full = mask1+mask2
-            # self.wrapped_mask[np.where(mask=0)] = 0
 
-            # self.mask = cv2.inRange(src=hsv_original, lowerb=mask_lower_hsv, upperb=mask_upper_hsv)
             mask_hsv = hsv_original.copy()
             mask_hsv[np.where(mask_full==0)] = 0
 
             #conversion of mask from hsv to grayscale
 	
-            (h,s,v) = cv2.split(mask_hsv)
-            v[:] = 100
-            img = cv2.merge((v, v, s))
-            rgb = cv2.cvtColor(img, cv2.COLOR_HSV2RGB)	
-            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+            # (h,s,v) = cv2.split(mask_hsv)
+            # v[:] = 100
+            # img = cv2.merge((v, v, s))
+            # rgb = cv2.cvtColor(img, cv2.COLOR_HSV2RGB)	
+            # gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
 
-            # blur = cv2.GaussianBlur(gray,(5,5),1)
-            # ret3,th3 = cv2.threshold(blur,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            mask_bgr = cv2.cvtColor(mask_hsv, cv2.COLOR_HSV2BGR)
+            mask_gray = cv2.cvtColor(mask_bgr, cv2.COLOR_BGR2GRAY)
 
-            self.mask = gray
-            # self.mask[np.where(mask_full==0)] = 0
+
+            self.mask = mask_gray
 
             if self.invertMaskCheckBox.isChecked():
                 self.mask = cv2.bitwise_not(self.mask)
