@@ -1,14 +1,21 @@
 class Score:
 
-    FRAME_IN_CM = 17.8
+    # FRAME_IN_CM = 9.0
+    FRAME_IN_CM = 9.0
     FRAME_IN_PX = 512
     RADIUS = 0.6
     WIDTH = 0.8
 
-    PX2CM = FRAME_IN_CM/FRAME_IN_PX
+    DISPLAY_FRAME_CM = 17.5
 
+    PX2CM = FRAME_IN_CM/FRAME_IN_PX
+    
     def px2cm(self, dist):
         return dist * self.PX2CM
+    
+    def cm2px(self, distCm):
+        cm2px = self.FRAME_IN_PX/self.DISPLAY_FRAME_CM
+        return distCm * cm2px
     
     def finalScore(self, distance):
 

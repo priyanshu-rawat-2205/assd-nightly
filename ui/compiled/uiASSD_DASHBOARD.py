@@ -18,9 +18,9 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QTransform)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
     QGridLayout, QGroupBox, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QPushButton, QScrollArea,
-    QSizePolicy, QSlider, QTabWidget, QTextEdit,
-    QVBoxLayout, QWidget)
+    QLineEdit, QMainWindow, QPushButton, QRadioButton,
+    QScrollArea, QSizePolicy, QSlider, QTabWidget,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -517,6 +517,33 @@ class Ui_MainWindow(object):
         self.calculateScoreFlag.setIconSize(QSize(0, 0))
         self.calculateScoreFlag.setCheckable(True)
         self.calculateScoreFlag.setTristate(False)
+        self.widget = QWidget(self.tab_2)
+        self.widget.setObjectName(u"widget")
+        self.widget.setGeometry(QRect(10, 150, 261, 50))
+        self.verticalLayout = QVBoxLayout(self.widget)
+        self.verticalLayout.setObjectName(u"verticalLayout")
+        self.verticalLayout.setContentsMargins(0, 0, 0, 0)
+        self.label_8 = QLabel(self.widget)
+        self.label_8.setObjectName(u"label_8")
+
+        self.verticalLayout.addWidget(self.label_8)
+
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.AutoModeRadioButton = QRadioButton(self.widget)
+        self.AutoModeRadioButton.setObjectName(u"AutoModeRadioButton")
+
+        self.horizontalLayout_2.addWidget(self.AutoModeRadioButton)
+
+        self.ManualModeRadioButton = QRadioButton(self.widget)
+        self.ManualModeRadioButton.setObjectName(u"ManualModeRadioButton")
+        self.ManualModeRadioButton.setChecked(True)
+
+        self.horizontalLayout_2.addWidget(self.ManualModeRadioButton)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_2)
+
         self.tabWidget_2.addTab(self.tab_2, "")
         self.tab_3 = QWidget()
         self.tab_3.setObjectName(u"tab_3")
@@ -659,6 +686,9 @@ class Ui_MainWindow(object):
         self.startServerBtn.setText(QCoreApplication.translate("MainWindow", u"Start Server", None))
         self.stopServerBtn.setText(QCoreApplication.translate("MainWindow", u"Stop Server", None))
         self.calculateScoreFlag.setText("")
+        self.label_8.setText(QCoreApplication.translate("MainWindow", u"Network Mode", None))
+        self.AutoModeRadioButton.setText(QCoreApplication.translate("MainWindow", u"Auto", None))
+        self.ManualModeRadioButton.setText(QCoreApplication.translate("MainWindow", u"Manual", None))
         self.tabWidget_2.setTabText(self.tabWidget_2.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Server", None))
         self.label_6.setText(QCoreApplication.translate("MainWindow", u"Host :", None))
         self.clientHost.setPlaceholderText(QCoreApplication.translate("MainWindow", u"127.0.0.1", None))

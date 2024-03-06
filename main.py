@@ -1,5 +1,5 @@
 import sys
-from math import dist
+from math import dist, floor
 import numpy as np
 import cv2
 import socket
@@ -11,15 +11,16 @@ from PySide6.QtMultimedia import QMediaDevices
 from ui.compiled.uiASSD_DASHBOARD import Ui_MainWindow
 import threading
 import Color
-import json
+import json, time
 from _thread import *
 
 class ThreadClass(QThread):
     frameUpdate = Signal(np.ndarray)
     global camPort
-
+    url = "http://192.168.118.214:8080/video"
     def run(self):
         capture = cv2.VideoCapture(camPort)
+        # capture = cv2.VideoCapture(self.url)
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 600)
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, 800)
         self.ThreadActive = True
@@ -63,7 +64,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         original = self.cvt_cv_qt(Image)
         self.copyImage = Image.copy()
         self.cleanImage = Image.copy()
-        cleanTarget = cv2.imread("images/cleanTargetMarked.jpg")
+        cleanTarget = cv2.imread("images/cleanTargetCropped1.jpg")
         
         self.camSource.setPixmap(original)
         self.camSource.setScaledContents(True)
@@ -140,64 +141,112 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         self.targetSource.setScaledContents(True)
                         
 
-                        wrapped_mask_lower_hsv = np.array([self.TargetMinHSlider.value(), self.TargetMinSSlider.value(), self.TargetMinVSlider.value()], dtype=np.uint8)
-                        wrapped_mask_upper_hsv = np.array([self.TargetMaxHSlider.value(), self.TargetMaxSSlider.value(), self.TargetMaxVSlider.value()], dtype=np.uint8)
+                        # wrapped_mask_lower_hsv = np.array([self.TargetMinHSlider.value(), self.TargetMinSSlider.value(), self.TargetMinVSlider.value()], dtype=np.uint8)
+                        # wrapped_mask_upper_hsv = np.array([self.TargetMaxHSlider.value(), self.TargetMaxSSlider.value(), self.TargetMaxVSlider.value()], dtype=np.uint8)
 
                         hsv_wrapped = cv2.cvtColor(src=wrapped,code=cv2.COLOR_BGR2HSV)
-                        self.wrapped_mask = cv2.inRange(src=hsv_wrapped, lowerb=wrapped_mask_lower_hsv, upperb=wrapped_mask_upper_hsv)
+                        # self.wrapped_mask = cv2.inRange(src=hsv_wrapped, lowerb=wrapped_mask_lower_hsv, upperb=wrapped_mask_upper_hsv)
 
-                        wrapped_maskQt = self.cvt_cv_qt(self.wrapped_mask)
+                        #hardcode value
+                        wrapped_mask1 = cv2.inRange(hsv_wrapped, lowerb=mask1_lower_hsv, upperb=mask1_upper_hsv)
+                        wrapped_mask2 = cv2.inRange(hsv_wrapped, lowerb=mask2_lower_hsv, upperb=mask2_upper_hsv)
+
+                        wrapped_mask_full = wrapped_mask1 + wrapped_mask2
+                        wrapped_mask_hsv = hsv_wrapped.copy()
+                        wrapped_mask_hsv[np.where(wrapped_mask_full==0)] = 0
+
+                        wrapped_mask_bgr = cv2.cvtColor(wrapped_mask_hsv, cv2.COLOR_HSV2BGR)
+                        wrapped_mask_gray = cv2.cvtColor(wrapped_mask_bgr, cv2.COLOR_BGR2GRAY)
+
+
+
+                        wrapped_maskQt = self.cvt_cv_qt(wrapped_mask_gray)
                         self.targetMaskSource.setPixmap(wrapped_maskQt)
                         self.targetMaskSource.setScaledContents(True)
 
                         if self.detectShotsCheckBox.isChecked():
-                            w_contours, _ = cv2.findContours(self.wrapped_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-                
-                            for w_cnt in w_contours:
-                                (x2,y2), radius = cv2.minEnclosingCircle(w_cnt)
-                                center = (int(x2), int(y2))
-                                radius = int(radius)
-                                if radius > 5 and radius < 50:
-                                    plotTarget = cleanTarget.copy()
-                                    cv2.circle(wrapped, center, radius, (255, 0, 0), 2)
-                                    cv2.circle(plotTarget, center, 5, (0,0,255), 2)
+                            # w_contours, _ = cv2.findContours(self.wrapped_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                            w_contours, _ = cv2.findContours(wrapped_mask_gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-                                    flipped = cv2.flip(src=plotTarget, flipCode = 1)
-                                    flippedQt = self.cvt_cv_qt(flipped)
-                                    self.scoreSource.setPixmap(flippedQt)
-                                    self.scoreSource.setScaledContents(True)
-
-                                    # cv2.circle(wrapped, (256, 256), 5, (255, 0, 0), 2)
-                                    distance = dist(center, (256, 256))
-                                    cv2.putText(wrapped, str(distance), center, cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 0))
-                                    wrappedQt = self.cvt_cv_qt(wrapped)
-                                    self.targetSource.setPixmap(wrappedQt)
-                                    self.targetSource.setScaledContents(True)
-                                    score = Score()
-                                    self.score = score.finalScore(distance)
-
-                                    if self.calculateScoreFlag.isChecked():
-                                        self.averageScore = self.score + self.averageScore
-                                        # print(self.averageScore)
-                                        # self.textEdit.append("calculating score...")
-                                        self.count += 1
-                                        if self.count == 30:
-                                            self.finalAverageScore = self.averageScore/30
-                                            self.textEdit.append(f"score: {round(self.finalAverageScore, 2)}")
-                                            self.textEdit.append("sending...")
-                                            # self.broadcast(self.finalAverageScore)
-                                            # self.broadcast(center)
-                                            self.broadcast({'score':self.finalAverageScore, 'center':center})
-                                            # Entity.center_coordinates = center
-                                            # Entity.score = self.finalAverageScore
-                                            self.textEdit.append(f"sent")
-                                            self.averageScore = 0
-                                            self.count = 0
-                                            self.calculateScoreFlag.setChecked(False)
-                                            # Entity.flag=False
+                            
+                            # if len(w_contours) == 1: # added this countour check might have to remove later
+                            # print(len(w_contours))
+                            if len(w_contours) != 1: # added this countour check might have to remove later
 
 
-                                    self.scoreValueLabel.setText(str(self.score))
+                                for w_cnt in w_contours:
+                                    (x2,y2), radius = cv2.minEnclosingCircle(w_cnt)
+                                    center = (int(x2), int(y2))
+                                    radius = int(radius)
+                                    if radius > 15 and radius < 50:
+
+                                        score = Score()
+
+                                        (x_cor, y_cor) = center
+                                        (x_cor, y_cor) = (score.px2cm(x_cor), score.px2cm(y_cor))
+                                        (x_cor, y_cor) = (floor(score.cm2px(x_cor)), floor(score.cm2px(y_cor)))
+
+
+                                        plotTarget = cleanTarget.copy()
+                                        cv2.circle(wrapped, center, radius, (255, 0, 0), 2)
+                                        # cv2.circle(plotTarget, (x_cor, y_cor), 5, (0,0,255), 2)
+                                        # self.textEdit.append(f"{x_cor}, {y_cor}")
+                                        # (a, b) = center
+                                        cv2.circle(plotTarget, center, 5, (0,0,255), 2)
+                                        # self.textEdit.append(f"{center}")
+
+
+                                        # flipped = cv2.flip(src=plotTarget, flipCode = 1)
+                                        # flippedQt = self.cvt_cv_qt(flipped)
+                                        flippedQt = self.cvt_cv_qt(plotTarget) #added the non-flipped image for testing might remove later
+
+                                        self.scoreSource.setPixmap(flippedQt)
+                                        self.scoreSource.setScaledContents(True)
+                                       
+
+                                        # cv2.circle(wrapped, (256, 256), 5, (255, 0, 0), 2)
+                                        distance = dist(center, (256, 256))
+                                        cv2.putText(wrapped, str(distance), center, cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 0))
+                                        # cv2.putText(wrapped, str(distance), (x_cor, y_cor), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 0))
+                                        wrappedQt = self.cvt_cv_qt(wrapped)
+                                        self.targetSource.setPixmap(wrappedQt)
+                                        self.targetSource.setScaledContents(True)
+                                        
+                                        self.score = score.finalScore(distance)
+
+                                        if self.calculateScoreFlag.isChecked():
+                                            self.averageScore = self.score + self.averageScore
+                                            # print(self.averageScore)
+                                            # self.textEdit.append("calculating score...")
+                                            self.count += 1
+                                            if self.count == 30:
+                                                self.finalAverageScore = self.averageScore/30
+                                                self.textEdit.append(f"score: {round(self.finalAverageScore, 2)}")
+                                                if(self.finalAverageScore >= 7.0):
+                                                    if self.ManualModeRadioButton.isChecked():
+                                                        self.broadcast({'score':self.finalAverageScore, 'center': center, 'mode': 'manual'})
+                                                        self.calculateScoreFlag.setChecked(False)
+                                                    else:
+                                                        self.broadcast({'score':self.finalAverageScore, 'center': center, 'mode': 'auto'})
+                                                        time.sleep(5)
+                                                    self.textEdit.append("sending...")
+                                                    # self.broadcast(self.finalAverageScore)
+                                                    # self.broadcast(center)
+
+                                                    
+                                                        
+                                                    # self.broadcast({'score':self.finalAverageScore, 'center':(x_cor, y_cor)})
+                                                    # Entity.center_coordinates = center
+                                                    # Entity.score = self.finalAverageScore
+                                                    self.textEdit.append(f"sent")
+                                                    self.averageScore = 0
+                                                    self.count = 0
+                                                    
+
+                                                    # Entity.flag=False
+
+
+                                        self.scoreValueLabel.setText(str(self.score))
 
 
 
@@ -285,6 +334,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             start_new_thread(self.acceptClients, (server, ))
 
             self.textEdit.append(f"server is listening on {self.host}:{self.port}")
+
         except Exception as e:
             self.textEdit.append(f"{type(e)} {e}")
 
@@ -299,6 +349,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # lock acquired by client
                 self.lock.acquire()
                 print('Connected to :', addr[0], ':', addr[1])
+
+                if self.AutoModeRadioButton.isChecked():
+                    self.calculateScoreFlag.setChecked(True)
         
                 # Start a new thread and return its identifier
                 start_new_thread(self.requestHandler, (client,))
@@ -379,15 +432,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 data = json.loads(data)
                 
                 if (type(data) == type({'type':'dict'})):
-                    self.scoreValueLabel.setText(str(round(data['score'], 1)))
-                    cleanTarget = cv2.imread("images/cleanTargetMarked.jpg")
-                    plot = cv2.circle(cleanTarget, data['center'], 5, (0,0,255), 2)
-                    plot = cv2.flip(src=plot, flipCode=1)
-                    plotQt = self.cvt_cv_qt(plot)
-                    self.scoreSource.setPixmap(plotQt)
-                    self.scoreSource.setScaledContents(True)
-                    self.clientGetScoreBtn.setEnabled(True)
-                    self.textEdit.append("score refreshed")
+                        self.clientGetScoreBtn.setEnabled(False)
+                        self.scoreValueLabel.setText(str(round(data['score'], 1)))
+                        cleanTarget = cv2.imread("images/cleanTargetCropped1.jpg")
+                        plot = cv2.circle(cleanTarget, data['center'], 5, (0,0,255), 2)
+                        # plot = cv2.flip(src=plot, flipCode=1)
+                        plotQt = self.cvt_cv_qt(plot)
+                        self.scoreSource.setPixmap(plotQt)
+                        self.scoreSource.setScaledContents(True)
+                        if data['mode'] == 'auto':
+                            self.clientGetScoreBtn.setEnabled(False)
+                        else:
+                            self.clientGetScoreBtn.setEnabled(True)
+                        self.textEdit.append("score refreshed")
                 else:
                     self.textEdit.append("failed to fetch score")
 
