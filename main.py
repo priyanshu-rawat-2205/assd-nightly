@@ -13,6 +13,9 @@ import threading
 import Color
 import json, time
 from _thread import *
+from datetime import datetime
+
+import os
 
 class ThreadClass(QThread):
     frameUpdate = Signal(np.ndarray)
@@ -21,14 +24,20 @@ class ThreadClass(QThread):
     def run(self):
         capture = cv2.VideoCapture(camPort)
         # capture = cv2.VideoCapture(self.url)
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 600)
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 800)
+        # capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 600)
+        # capture.set(cv2.CAP_PROP_FRAME_WIDTH, 800)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 512)
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 512)
         self.ThreadActive = True
         while self.ThreadActive:
             ret, frame = capture.read()
             # flipFrame = cv2.flip(src=frame, flipCode=-1)
+            flipFrame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+
             if ret:
-                self.frameUpdate.emit(frame)
+                # self.frameUpdate.emit(frame)
+                self.frameUpdate.emit(flipFrame)
+
 
     def stop(self):
         self.ThreadActive = False
@@ -41,6 +50,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     checker = False
     lock = threading.Lock()
     clientCopy = None
+    SCALE_CONTENTS = True
 
     def __init__(self):
         super().__init__()
@@ -61,13 +71,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @Slot(np.ndarray)
     def opencv_emit(self, Image):
-        original = self.cvt_cv_qt(Image)
-        self.copyImage = Image.copy()
+
+        lab = cv2.cvtColor(Image, cv2.COLOR_BGR2Lab)
+
+        lab_planes = cv2.split(lab)
+
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        
+        lab[:,:,0] = clahe.apply(lab[:,:,0])
+        # lab = cv2.merge(lab_planes)
+        bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        # original = self.cvt_cv_qt(Image)
+        original = self.cvt_cv_qt(bgr)
+
+
+        # self.copyImage = Image.copy()
+        self.copyImage = bgr.copy()
         self.cleanImage = Image.copy()
-        cleanTarget = cv2.imread("images/cleanTargetCropped1.jpg")
+        cleanTarget = cv2.imread(self.resource_path("images/cleanTargetCropped1.jpg"))
         
         self.camSource.setPixmap(original)
-        self.camSource.setScaledContents(True)
+        self.camSource.setScaledContents(self.SCALE_CONTENTS)
 
         if self.getMaskCheckBox.isChecked():
             
@@ -97,15 +121,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             mask_bgr = cv2.cvtColor(mask_hsv, cv2.COLOR_HSV2BGR)
             mask_gray = cv2.cvtColor(mask_bgr, cv2.COLOR_BGR2GRAY)
 
+            #correction of non-uniform illumination and various camera noises
+            # kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+            # morph = cv2.morphologyEx(mask_gray, cv2.MORPH_CLOSE, kernel)
+            # out_gray=cv2.divide(image, bg, scale=255)
+            # out_binary=cv2.threshold(out_gray, 0, 255, cv2.THRESH_OTSU )[1]
 
+
+            # self.mask = mask_gray
             self.mask = mask_gray
-
+            
             if self.invertMaskCheckBox.isChecked():
                 self.mask = cv2.bitwise_not(self.mask)
 
             maskQt = self.cvt_cv_qt(self.mask)
             self.maskSource.setPixmap(maskQt)
-            self.maskSource.setScaledContents(True)
+            self.maskSource.setScaledContents(self.SCALE_CONTENTS)
 
         if self.detectTargetCheckBox.isChecked():
             contours, _ = cv2.findContours(self.mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -115,7 +146,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 dst = np.array(default, dtype="float32")
                 area = cv2.contourArea(cnt)
                 approx = cv2.approxPolyDP(cnt, 0.01*cv2.arcLength(cnt, True), True)
-                if area > self.minAreaSlider.value() and len(approx) == 4:
+                # if area > self.minAreaSlider.value() and len(approx) == 4:
+                if area > 500 and len(approx) == 4:
                     cv2.drawContours(self.copyImage, [approx], 0, (0, 255, 0), 2)
                     n = approx.ravel()
                     i = 0
@@ -129,16 +161,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         i += 1
                     cntImage = self.cvt_cv_qt(self.copyImage)
                     self.camSource.setPixmap(cntImage)
-                    self.camSource.setScaledContents(True)
+                    self.camSource.setScaledContents(self.SCALE_CONTENTS)
 
                     if self.getTargetCheckBox.isChecked():
                         points = np.array(points, dtype="float32")
                         points = self.order_points(points)
                         m = cv2.getPerspectiveTransform(points, dst)
                         wrapped = cv2.warpPerspective(self.cleanImage, m, (512, 512))
+                        # wrapped = cv2.rotate(wrapped, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                        # wrapped = cv2.flip(wrapped, 0)
                         wrappedImage = self.cvt_cv_qt(wrapped)
                         self.targetSource.setPixmap(wrappedImage)
-                        self.targetSource.setScaledContents(True)
+                        self.targetSource.setScaledContents(self.SCALE_CONTENTS)
                         
 
                         # wrapped_mask_lower_hsv = np.array([self.TargetMinHSlider.value(), self.TargetMinSSlider.value(), self.TargetMinVSlider.value()], dtype=np.uint8)
@@ -162,7 +196,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
                         wrapped_maskQt = self.cvt_cv_qt(wrapped_mask_gray)
                         self.targetMaskSource.setPixmap(wrapped_maskQt)
-                        self.targetMaskSource.setScaledContents(True)
+                        self.targetMaskSource.setScaledContents(self.SCALE_CONTENTS)
 
                         if self.detectShotsCheckBox.isChecked():
                             # w_contours, _ = cv2.findContours(self.wrapped_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -201,7 +235,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                         flippedQt = self.cvt_cv_qt(plotTarget) #added the non-flipped image for testing might remove later
 
                                         self.scoreSource.setPixmap(flippedQt)
-                                        self.scoreSource.setScaledContents(True)
+                                        self.scoreSource.setScaledContents(self.SCALE_CONTENTS)
                                        
 
                                         # cv2.circle(wrapped, (256, 256), 5, (255, 0, 0), 2)
@@ -210,11 +244,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                         # cv2.putText(wrapped, str(distance), (x_cor, y_cor), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 0))
                                         wrappedQt = self.cvt_cv_qt(wrapped)
                                         self.targetSource.setPixmap(wrappedQt)
-                                        self.targetSource.setScaledContents(True)
+                                        self.targetSource.setScaledContents(self.SCALE_CONTENTS)
                                         
                                         self.score = score.finalScore(distance)
 
-                                        if self.calculateScoreFlag.isChecked():
+                                        # if self.calculateScoreFlag.isChecked():
+                                        if self.calculateScoreFlag.isChecked() and self.clientStaus: #added this check to prevent brodcasting data on bad descripter
                                             self.averageScore = self.score + self.averageScore
                                             # print(self.averageScore)
                                             # self.textEdit.append("calculating score...")
@@ -230,7 +265,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                                         self.broadcast({'score':self.finalAverageScore, 'center': center, 'mode': 'auto'})
                                                         time.sleep(5)
                                                     self.textEdit.append("sending...")
-                                                    # self.broadcast(self.finalAverageScore)
+                                                    # self.broadcast(self.finalAverageScore)S
                                                     # self.broadcast(center)
 
                                                     
@@ -330,6 +365,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             server.bind((self.host, self.port))
 
             server.listen()
+            self.server = server
 
             start_new_thread(self.acceptClients, (server, ))
 
@@ -349,15 +385,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # lock acquired by client
                 self.lock.acquire()
                 print('Connected to :', addr[0], ':', addr[1])
-
+                self.textEdit.append(f"connected to: {addr[0]} : {addr[1]}")
+                self.clientStatus = True
                 if self.AutoModeRadioButton.isChecked():
                     self.calculateScoreFlag.setChecked(True)
         
                 # Start a new thread and return its identifier
                 start_new_thread(self.requestHandler, (client,))
-            except:
+            except Exception as e:
                 server.close()
                 self.clients = []
+                self.textEdit.append(f"{type(e)} {e}")
+                print(f"{type(e)} {e}")
+                break
 
     def requestHandler(self, client):
         while True:
@@ -366,15 +406,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 data = client.recv(1024)
                 if not data:
                     print('Bye')
+                    self.textEdit.append("client disconnected")
                     
                     # lock released on exit
                     self.lock.release()
                     client.close()
+                    self.clientStatus = False
                     break
                 data = json.loads(data)
                 if(data['status'] == 'True'):
                     self.calculateScoreFlag.setChecked(True)
                     self.textEdit.append("score requested")
+                elif(data['status'] == 'False'):
+                    self.textEdit.append("client disconnected")
+                    self.lock.release()
+                    client.close()
+                    break
                     
                 # reverse the given string from client
                 # data = data[::-1]
@@ -388,20 +435,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 
     def broadcast(self, data):
-        print("broadcast called")
-        data = json.dumps(data)
-        client = self.clients[0]
-        client.send(bytes(data, "utf-8"))      
-        self.textEdit.append("score sent")
+        try:                
+            data = json.dumps(data)
+            client = self.clients[0]
+            client.send(bytes(data, "utf-8"))      
+            self.textEdit.append("score sent")
+        except Exception as e:
+            print(f"brodcast error: {type(e)}: {e}")
+            self.textEdit.append('failed to send score')
 
         
     def stopServer(self, event):
-        # self.server.server_close()
-        # self.textEdit.append("server closed")
-        pass
+        try:
+            self.server.close()
+            self.textEdit.append("server closed")
+        except Exception as e:
+            print(e)
+            self.textEdit.append(e)
     
         
     def startClient(self, event):
+        #file path maker
+        now = datetime.now().strftime("%d-%m-%Y[%H:%M]")
+        print(now)
+        self.path = now
+
+
         host = self.clientHost.text()
         port = int(self.clientPort.text())
         self.textEdit.append(f"trying to connect...")
@@ -422,7 +481,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         except Exception as e:
             self.textEdit.append(f"{type(e)} {e}")
             print(f"{type(e)} {e}")
-        
     
     def clientHandler(self, client):
         # message = 'test'
@@ -434,8 +492,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if (type(data) == type({'type':'dict'})):
                         self.clientGetScoreBtn.setEnabled(False)
                         self.scoreValueLabel.setText(str(round(data['score'], 1)))
-                        cleanTarget = cv2.imread("images/cleanTargetCropped1.jpg")
+                        cleanTarget = cv2.imread(self.resource_path("images/cleanTargetCropped1.jpg"))
                         plot = cv2.circle(cleanTarget, data['center'], 5, (0,0,255), 2)
+
+                        #write shot target images to path
+                        self.save_image(plot)
+
                         # plot = cv2.flip(src=plot, flipCode=1)
                         plotQt = self.cvt_cv_qt(plot)
                         self.scoreSource.setPixmap(plotQt)
@@ -446,14 +508,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                             self.clientGetScoreBtn.setEnabled(True)
                         self.textEdit.append("score refreshed")
                 else:
-                    self.textEdit.append("failed to fetch score")
+                    self.textEdit.append("failed to fetch score") 
 
             except:
                 client.close()
                 break
 
     def stopClient(self, event):
-        self.clientSocket.close()
+        self.clientCopy.close()
+        request = json.dumps({'status' : 'False'})
+        self.clientCopy.send(bytes(request, 'utf-8'))
         self.textEdit.append("disconnected from server")
 
     def getScoreInit(self):
@@ -473,7 +537,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         #     print(score['score'])
         #     self.clientGetScoreBtn.setEnabled(True)
         
-            
+    def resource_path(self, relative_path):
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path) 
+
+    def save_image(self, image):
+        base_path = f"/home/{os.environ.get('USER')}/"
+        save_dir = ".ASSD/"
+        now = datetime.now().strftime("%d-%m-%Y[%H:%M]")
+        img_name = datetime.now().strftime("[%H:%M:%S]")
+        if not os.path.exists(base_path + save_dir): 
+            os.mkdir(os.path.join(base_path, save_dir))
+        if not os.path.exists(base_path + save_dir + now):
+            os.mkdir(os.path.join(base_path + save_dir, now))
+        cv2.imwrite(os.path.join(base_path + save_dir + now, f"shot{img_name}.jpg"), image)   
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
