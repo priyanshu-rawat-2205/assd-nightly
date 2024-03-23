@@ -1,0 +1,1 @@
+pyinstaller --onefile --add-data=./images:./images --icon="./ASSD.ico" --name="ASSD" main.py

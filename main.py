@@ -89,6 +89,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.copyImage = bgr.copy()
         self.cleanImage = Image.copy()
         cleanTarget = cv2.imread(self.resource_path("images/cleanTargetCropped1.jpg"))
+        # cleanTarget = cv2.imread("images/cleanTargetCropped1.jpg")
+
         
         self.camSource.setPixmap(original)
         self.camSource.setScaledContents(self.SCALE_CONTENTS)
@@ -249,7 +251,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                         self.score = score.finalScore(distance)
 
                                         # if self.calculateScoreFlag.isChecked():
-                                        if self.calculateScoreFlag.isChecked() and self.clientStaus: #added this check to prevent brodcasting data on bad descripter
+                                        if self.calculateScoreFlag.isChecked() and self.clientStatus : #added this check to prevent brodcasting data on bad descripter
                                             self.averageScore = self.score + self.averageScore
                                             # print(self.averageScore)
                                             # self.textEdit.append("calculating score...")
@@ -304,7 +306,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             global camPort
             camPort = self.ports[self.index]
         
-        # Opencv QThread
             self.Worker1_Opencv = ThreadClass()
             self.Worker1_Opencv.frameUpdate.connect(self.opencv_emit)
             self.Worker1_Opencv.start()
@@ -356,7 +357,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.host = self.serverHost.text()
         self.port = int(self.serverPort.text())
-        self.clients= []
+        self.clients= [] #this list might be the cause of seg faults as it might raise bad file discriptor error
 
         # Starting Server
         try:
@@ -367,10 +368,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             server.listen()
             self.server = server
 
-            start_new_thread(self.acceptClients, (server, ))
-
+            # start_new_thread(self.acceptClients, (server, ))
+            t1 = threading.Thread(target = self.acceptClients, args = (server, ))
+            t1.start()
             self.textEdit.append(f"server is listening on {self.host}:{self.port}")
-
         except Exception as e:
             self.textEdit.append(f"{type(e)} {e}")
 
@@ -379,6 +380,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         while True:
             try:
                 # establish connection with client
+                print('accepting clients')
                 client, addr = server.accept()
                 self.clients.append(client)
         
@@ -391,13 +393,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.calculateScoreFlag.setChecked(True)
         
                 # Start a new thread and return its identifier
-                start_new_thread(self.requestHandler, (client,))
+                # start_new_thread(self.requestHandler, (client,))
+                t1 = threading.Thread(target = self.requestHandler, args = (client, ))
+                t1.start()
+                t1.join()
+                client.close()
+                print("came out of request handler thread")
             except Exception as e:
                 server.close()
                 self.clients = []
                 self.textEdit.append(f"{type(e)} {e}")
                 print(f"{type(e)} {e}")
-                break
+                return
 
     def requestHandler(self, client):
         while True:
@@ -412,16 +419,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.lock.release()
                     client.close()
                     self.clientStatus = False
-                    break
+                    return
+                    # break
                 data = json.loads(data)
                 if(data['status'] == 'True'):
                     self.calculateScoreFlag.setChecked(True)
                     self.textEdit.append("score requested")
                 elif(data['status'] == 'False'):
                     self.textEdit.append("client disconnected")
+                    print("client disconnected")
+                    self.clientStatus = False
                     self.lock.release()
                     client.close()
-                    break
+                    return
+                    # break
                     
                 # reverse the given string from client
                 # data = data[::-1]
@@ -429,9 +440,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # send back reversed string to client
                 # client.send(data)
 
-            except:
+            except Exception as e:
+                print(e)
                 client.close()
-                break
+                sys.exit()
+                # break
 
 
     def broadcast(self, data):
@@ -455,12 +468,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     
         
     def startClient(self, event):
-        #file path maker
-        now = datetime.now().strftime("%d-%m-%Y[%H:%M]")
-        print(now)
-        self.path = now
-
-
         host = self.clientHost.text()
         port = int(self.clientPort.text())
         self.textEdit.append(f"trying to connect...")
@@ -493,6 +500,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         self.clientGetScoreBtn.setEnabled(False)
                         self.scoreValueLabel.setText(str(round(data['score'], 1)))
                         cleanTarget = cv2.imread(self.resource_path("images/cleanTargetCropped1.jpg"))
+                        # cleanTarget = cv2.imread("images/cleanTargetCropped1.jpg")
                         plot = cv2.circle(cleanTarget, data['center'], 5, (0,0,255), 2)
 
                         #write shot target images to path
@@ -515,10 +523,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 break
 
     def stopClient(self, event):
-        self.clientCopy.close()
         request = json.dumps({'status' : 'False'})
         self.clientCopy.send(bytes(request, 'utf-8'))
         self.textEdit.append("disconnected from server")
+        self.clientCopy.close()
 
     def getScoreInit(self):
         self.textEdit.append("refreshing score...")
@@ -526,16 +534,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         request = json.dumps({'status' : 'True'})
         self.clientCopy.send(bytes(request, 'utf-8'))
-        # response = requests.get(self.url + "prepare")
-        # response = json.loads(response.content)
-        # if response['status'] == "True":
-        #     print('score prepared')
-        #     time.sleep(5)
-        #     score = requests.get(self.url + "score")
-        #     score = json.loads(score.content)
-        #     self.textEdit.append(str(score['score']))
-        #     print(score['score'])
-        #     self.clientGetScoreBtn.setEnabled(True)
         
     def resource_path(self, relative_path):
         try:
